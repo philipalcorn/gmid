@@ -23,6 +23,7 @@ Outputs:
 
 from pathlib import Path
 import numpy as np
+import os
 
 from callbacks import CallbackGetAllData
 from parser import Parser
@@ -30,6 +31,8 @@ from spice import Spice
 from helpers import Helpers
 from runconfig import RunConfig
 
+# Set to 1 or 0 to enable low / high resolution characterization
+FAST = 1
 
 # ---------- Sweep configuration ----------
 W_REF    = 10e-6
@@ -39,12 +42,17 @@ PMOS_DEV = "M2"
 _ROOT   = Path(__file__).parent.parent
 DATA_DIR = _ROOT / "char_data"
 
+
 L_VALUES = [0.35e-6, 0.7e-6, 1.0e-6, 2.0e-6]
 VGS_MIN, VGS_MAX, VGS_STEP = 0.0, 5, 0.05         # [V]
 VDS_MIN, VDS_MAX, VDS_STEP = 0.0, 5, 0.05          # [V]
-#VGS_MIN, VGS_MAX, VGS_STEP = 0.0, 5, 0.5         # [V]
-#VDS_MIN, VDS_MAX, VDS_STEP = 0.0, 5, 0.5          # [V]
 VSB_VALUES = [0.0, 0.45, 0.9]                         # [V] logical Vsb
+
+if FAST:
+    L_VALUES = [0.35e-6, 0.7e-6, 1.0e-6, 2.0e-6]
+    VGS_MIN, VGS_MAX, VGS_STEP = 0.0, 5, 0.5         # [V]
+    VDS_MIN, VDS_MAX, VDS_STEP = 0.0, 5, 0.5         # [V]
+    VSB_VALUES = [0.0, 0.45, 0.9]                         # [V] logical Vsb
 
 
 def build_config() -> RunConfig:
@@ -86,27 +94,37 @@ def run_sweep(cfg: RunConfig):
           f"Vsb={len(VSB_VALUES)}, L={len(L_VALUES)}, "
           f"Vgs={len(vgs_grid)}, Vds={len(vds_grid)})")
 
-    for vsb in VSB_VALUES:
-        # Vb = -vsb sets NMOS body below source by vsb volts.
-        # PMOS gets Vb_p = VDD - Vb = VDD + vsb, so PMOS body is
-        # above its source by vsb volts -- symmetric body effect.
-        spice.set_parameter("Vb", f"{-vsb:.6f}")
-        for L in L_VALUES:
-            spice.set_parameter("L", f"{L}")
-            for vgs in vgs_grid:
-                spice.set_parameter("Vg", f"{vgs:.6f}")
-                for vds in vds_grid:
-                    spice.set_parameter("Vd", f"{vds:.6f}")
-                    spice.simulate()
-                    id_to_bias[launch_index] = (
-                        L, float(vgs), float(vds), float(vsb)
-                    )
-                    print(f"\rRunning simulation {launch_index}/{total}",
-                          end="", flush=True)
-                    launch_index += 1
+    try:
+        for vsb in VSB_VALUES:
+            # Vb = -vsb sets NMOS body below source by vsb volts.
+            # PMOS gets Vb_p = VDD - Vb = VDD + vsb, so PMOS body is
+            # above its source by vsb volts -- symmetric body effect.
+            spice.set_parameter("Vb", f"{-vsb:.6f}")
+            for L in L_VALUES:
+                spice.set_parameter("L", f"{L}")
+                for vgs in vgs_grid:
+                    spice.set_parameter("Vg", f"{vgs:.6f}")
+                    for vds in vds_grid:
+                        spice.set_parameter("Vd", f"{vds:.6f}")
+                        spice.simulate()
+                        id_to_bias[launch_index] = (
+                            L, float(vgs), float(vds), float(vsb)
+                        )
+                        print(f"\rRunning simulation {launch_index}/{total}",
+                              end="", flush=True)
+                        launch_index += 1
+    except KeyboardInterrupt:
+        spice.sim_runner.kill_all_ltspice()
+        print("\nInterrupted during launch.")
+        os._exit(1)
     print()
     print("Waiting for completion...")
-    spice.sim_runner.wait_completion()
+    try:
+        spice.sim_runner.wait_completion()
+    except KeyboardInterrupt:
+        spice.sim_runner.kill_all_ltspice()
+        print("\nInterrupted during wait.")
+        os._exit(1)
     return spice, id_to_bias
 
 

@@ -2,6 +2,7 @@ from callbacks import CallbackGetAllData
 from callbacks import SimResult, ParsedSimResult
 from pathlib import Path
 import matplotlib.pyplot as plt
+import shutil
 
 from typing import Dict, Iterable, Iterator, List, Optional, Union, Any
 
@@ -15,9 +16,9 @@ class Spice:
     def __init__(
             self,
             exe_path: Path,
-            asc_path: Union[str, Path],  
+            asc_path: Union[str, Path],
             output_folder: Union[str, Path],
-            callback_proc, 
+            callback_proc,
             parallel_sims: int = 8 ) -> None:
 
         self.asc_path = Path(asc_path)
@@ -28,12 +29,18 @@ class Spice:
         self.output_folder = Path(output_folder)
         self.output_folder.mkdir(parents=True, exist_ok=True)
 
+        # Copy auxiliary files (e.g. model_file.txt) so relative .include
+        # statements in the netlist resolve when LTspice runs from output_folder
+        for f in self.asc_path.parent.iterdir():
+            if f.is_file() and f.suffix not in ('.asc', '.net'):
+                shutil.copy2(f, self.output_folder / f.name)
+
         self.sim_runner = SimRunner(
             output_folder=str(self.output_folder),
             simulator=str(exe_path),
             parallel_sims=parallel_sims)
 
-        # It will create a netlist from a .asc and then assign itself that 
+        # It will create a netlist from a .asc and then assign itself that
         # netlist
         self.sim_runner.create_netlist(str(self.asc_path))
         self.netlist = SpiceEditor(str(self.net_path))

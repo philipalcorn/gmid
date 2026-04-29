@@ -148,11 +148,11 @@ def find_vgs_for_gmid(lut, interps, L, gmid_target, Vds, Vsb,
 
 # ─────────────────────────── sizing helpers ──────────────────────────────────
 
-def size_from_gm(q: dict, gm_target: float) -> float:
+def size_from_gm(q: dict, gm_target: float, W_ref=10e-6) -> float:
     """Return W [µm] needed to hit gm_target given the normalized point."""
     if q["gm"] <= 0:
         return np.nan
-    return gm_target / q["gm"] * 1e6   # W ref = 10µm, so scale to µm
+    return W_ref * 1e6 * gm_target / q["gm"]
 
 
 def size_from_id(q: dict, id_target: float, W_ref=10e-6) -> float:
@@ -204,7 +204,7 @@ def print_sizing(q: dict, gm_target, id_target, W_ref=10e-6):
     if gm_target is not None or id_target is not None:
         print("  Sizing:")
         if gm_target is not None:
-            W = size_from_gm(q, gm_target)
+            W = size_from_gm(q, gm_target, W_ref)
             id_at_W = q["Id"] * W * 1e-6 / W_ref if np.isfinite(W) else np.nan
             print(f"    For gm = {gm_target*1e6:.1f} µS  "
                   f"->  W = {W:.2f} µm  "
