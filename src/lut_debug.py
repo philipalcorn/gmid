@@ -1,8 +1,9 @@
 """Quick diagnostic dump of the 4D LUT to find why plots are empty."""
 
+from pathlib import Path
 import numpy as np
 
-d = np.load('./char_data/nmos_lut.npz')
+d = np.load(Path(__file__).parent.parent / 'char_data' / 'nmos_lut.npz')
 
 print('Keys:', list(d.files))
 print('Shape of Id:', d['Id'].shape)

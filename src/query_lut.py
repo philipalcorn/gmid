@@ -36,8 +36,9 @@ import numpy as np
 from scipy.interpolate import RegularGridInterpolator
 
 
-DEFAULT_NMOS = Path("./char_data/nmos_lut.npz")
-DEFAULT_PMOS = Path("./char_data/pmos_lut.npz")
+_ROOT = Path(__file__).parent.parent
+DEFAULT_NMOS = _ROOT / "char_data" / "nmos_lut.npz"
+DEFAULT_PMOS = _ROOT / "char_data" / "pmos_lut.npz"
 
 
 # ─────────────────────────── load & interpolate ──────────────────────────────

@@ -36,7 +36,8 @@ W_REF    = 10e-6
 VDD      = 3.3 
 NMOS_DEV = "M1"
 PMOS_DEV = "M2"
-DATA_DIR = Path("./char_data")
+_ROOT   = Path(__file__).parent.parent
+DATA_DIR = _ROOT / "char_data"
 
 L_VALUES = [0.35e-6, 0.7e-6, 1.0e-6, 2.0e-6]
 VGS_MIN, VGS_MAX, VGS_STEP = 0.0, 5, 0.05         # [V]
@@ -48,7 +49,7 @@ VSB_VALUES = [0.0, 0.45, 0.9]                         # [V] logical Vsb
 
 def build_config() -> RunConfig:
     cfg = RunConfig()
-    cfg.asc_path  = Path("./nmos_char.asc")
+    cfg.asc_path  = _ROOT / "simulations" / "nmos_char.asc"
     cfg.out_path  = Path("./char_out")
     cfg.num_parallel_sims = 20
     cfg.debug_mode = False

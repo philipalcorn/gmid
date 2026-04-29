@@ -8,7 +8,7 @@ class RunConfig:
         # Path to LTSPICE executable
 
         self.exe_path = Path(r"C:\Program Files\ADI\LTspice\LTspice.exe")
-        self.asc_path = Path("./example_closed_loop.asc")
+        self.asc_path = Path(__file__).parent.parent / "simulations" / "example_closed_loop.asc"
         if not self.asc_path.exists():
             raise FileNotFoundError(f"Can't find {self.asc_path.resolve()}")
         # Path to folder for output files 

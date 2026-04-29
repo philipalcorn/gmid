@@ -35,7 +35,7 @@ import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 
 
-DEFAULT_PATH = Path("./char_data/nmos_lut.npz")
+DEFAULT_PATH = Path(__file__).parent.parent / "char_data" / "nmos_lut.npz"
 ID_FLOOR = 1e-9    # A
 
 
