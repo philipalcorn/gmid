@@ -34,6 +34,7 @@ import argparse
 import sys
 import numpy as np
 from scipy.interpolate import RegularGridInterpolator
+from scipy.optimize import brentq
 
 
 _ROOT = Path(__file__).parent.parent
@@ -70,8 +71,7 @@ def build_interpolators(lut: dict) -> dict:
     points = (L, Vgs, Vds, Vsb)
 
     interps = {}
-    for key in ("Id", "gm", "gds", "gmb", "cgg", "vth", "vdsat",
-                "gm_id", "gm_gds", "ft"):
+    for key in ("Id", "gm", "gds", "gmb", "cgg", "vth", "vdsat"):
         if key not in lut:
             continue
         arr = lut[key]
@@ -89,7 +89,11 @@ def build_interpolators(lut: dict) -> dict:
 def query_point(interps, L, Vgs, Vds, Vsb) -> dict:
     """Interpolate all quantities at a single (L, Vgs, Vds, Vsb) point."""
     pt = np.array([[L, Vgs, Vds, Vsb]])
-    return {k: float(f(pt)[0]) for k, f in interps.items()}
+    q = {k: float(f(pt)[0]) for k, f in interps.items()}
+    q["gm_id"]  = q["gm"] / q["Id"]  if q.get("Id",  0) > 0      else np.nan
+    q["gm_gds"] = q["gm"] / q["gds"] if q.get("gds", 0) > 1e-15  else np.nan
+    q["ft"]     = q["gm"] / (2 * np.pi * q["cgg"]) if q.get("cgg", 0) > 1e-15 else np.nan
+    return q
 
 
 # ─────────────────────────── find Vgs from gm/Id ─────────────────────────────
@@ -98,52 +102,56 @@ def find_vgs_for_gmid(lut, interps, L, gmid_target, Vds, Vsb,
                       is_pmos=False) -> float:
     """
     Find the Vgs (or Vsg for PMOS) that hits gmid_target at (L, Vds, Vsb).
-    Uses the LUT grid directly (no interpolation needed for the search),
-    then refines with interpolation.
+    Scans the Vgs grid via interpolation to bracket the crossing, then refines
+    with brentq so the result is consistent with query_point.
     """
     Vgs_arr = lut["Vgs"]
 
-    # Snap L, Vds, Vsb to nearest grid points for the coarse search
-    L_arr   = lut["L"]
-    Vds_arr = lut["Vds"]
-    Vsb_arr = lut["Vsb"]
-    iL  = nearest_index(L_arr,   L)
-    iVd = nearest_index(Vds_arr, Vds)
-    iVb = nearest_index(Vsb_arr, Vsb)
+    def gmid_at(vgs):
+        pt = np.array([[L, vgs, Vds, Vsb]])
+        gm = float(interps["gm"](pt)[0])
+        Id = float(interps["Id"](pt)[0])
+        if Id > 1e-9:
+            return gm / Id
+        return np.nan
 
-    gmid_col = lut["gm_id"][iL, :, iVd, iVb]
-    Id_col   = lut["Id"][iL,   :, iVd, iVb]
-
-    # Only consider bias points where Id > 1 nA (device is on)
-    valid = np.isfinite(gmid_col) & (Id_col > 1e-9)
+    # Evaluate at every grid Vgs point
+    gmid_col = np.array([gmid_at(v) for v in Vgs_arr])
+    valid     = np.isfinite(gmid_col)
     if not valid.any():
         return np.nan
 
     gmid_valid = gmid_col[valid]
     vgs_valid  = Vgs_arr[valid]
 
-    # gm/Id is monotonically decreasing with Vgs (mostly).
-    # Find the crossing point.
     if gmid_target > gmid_valid.max() or gmid_target < gmid_valid.min():
         print(f"  Warning: gm/Id target {gmid_target:.1f} is outside "
               f"valid range [{gmid_valid.min():.1f}, "
               f"{gmid_valid.max():.1f}] at this bias.")
         return np.nan
 
-    # Linear interpolation between the two bracketing points
-    diffs = gmid_valid - gmid_target
-    # Find where sign changes (crossing)
+    # Find bracketing interval (gm/Id is mostly monotone decreasing with Vgs)
+    diffs     = gmid_valid - gmid_target
     crossings = np.where(np.diff(np.sign(diffs)))[0]
     if len(crossings) == 0:
         return float(vgs_valid[np.argmin(np.abs(diffs))])
 
-    # Take the crossing closest to moderate inversion
-    idx = crossings[len(crossings) // 2]
-    vgs_lo, vgs_hi = vgs_valid[idx], vgs_valid[idx + 1]
-    gm_lo,  gm_hi  = gmid_valid[idx], gmid_valid[idx + 1]
-    # Linear interpolation
-    frac = (gmid_target - gm_lo) / (gm_hi - gm_lo)
-    return float(vgs_lo + frac * (vgs_hi - vgs_lo))
+    # Pick the crossing in most-moderate inversion (middle crossing)
+    idx    = crossings[len(crossings) // 2]
+    vgs_lo = float(vgs_valid[idx])
+    vgs_hi = float(vgs_valid[idx + 1])
+
+    # Refine with brentq so the found Vgs is exact for the interpolators
+    try:
+        vgs_found = brentq(
+            lambda v: gmid_at(v) - gmid_target,
+            vgs_lo, vgs_hi,
+            xtol=1e-6, rtol=1e-6,
+        )
+    except ValueError:
+        vgs_found = (vgs_lo + vgs_hi) / 2.0
+
+    return float(vgs_found)
 
 
 # ─────────────────────────── sizing helpers ──────────────────────────────────
@@ -186,11 +194,13 @@ def print_point(q: dict, L: float, Vgs: float, Vds: float, Vsb: float,
         ("Vdsat",     q.get("vdsat", np.nan),         "V"),
         ("gm",        q.get("gm",    np.nan) * 1e6,  "µS"),
         ("gds",       q.get("gds",   np.nan) * 1e9,  "nS"),
+        ("r0",        1/(q.get("gds",   np.nan)) / 1e3,  "kΩ"),
         ("gmb",       q.get("gmb",   np.nan) * 1e6,  "µS"),
         ("gm/Id",     q.get("gm_id", np.nan),         "V⁻¹"),
         ("gm/gds",    q.get("gm_gds",np.nan),         "V/V"),
+        ("Cgg",       q.get("cgg",   np.nan) * 1e15, "fF"),
         ("ft",        q.get("ft",    np.nan) / 1e9,  "GHz"),
-        ("Id/W",      q.get("Id",    np.nan) / W_ref * 1e3, "mA/m"),
+        ("Id/W",      q.get("Id",    np.nan) / W_ref, "uA/um"),
     ]
     for name, val, unit in rows:
         if np.isfinite(val):

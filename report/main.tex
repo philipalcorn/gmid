@@ -304,438 +304,134 @@ and move on to the next transistor.
 \section{Application: Folded-Cascode Class-AB Amplifier}
 \label{sec:folded_cascode}
 % ─────────────────────────────────────────────────────────────────────────────
+The $g_m/I_D$ methodology was applied to the cascode and current-source
+devices and the class-AB output stage.  Each group was sized by querying the
+LUT at the target bias point rather than by solving the square-law model.
 
-\subsection{Topology Overview}
+\subsection{Cascode and Current-Source Devices}
 
-The folded-cascode amplifier is a single-stage op-amp topology that achieves
-high DC gain without the voltage headroom problem of an all-NMOS or all-PMOS
-cascode~\cite{razavi2001,allen2011}.  Its core idea is to take the output
-current of the differential input pair and ``fold'' it into cascode transistors
-of the opposite polarity, as shown in Fig.~\ref{fig:schematic}.
+The DC bias current for each cascode branch is $I_D = 10\,\mu\text{A}$.
+The supply-headroom budget sets a target saturation voltage
+$V_{dsat} \approx 122\,\text{mV}$ and a target drain-to-source voltage
+$V_{DS} \approx 160\,\text{mV}$.  Minimum channel length $L = 0.35\,\mu\text{m}$
+was chosen to maximise current density.
 
-\begin{figure}[htbp]
-  \centerline{\includegraphics[width=\columnwidth]{folded_cascode_schematic.png}}
-  \caption{Folded-cascode class-AB operational amplifier showing the
-           differential input pair (M1--M3), PMOS folding current sources
-           (M4, M5), cascode stacks (M6--M9), floating current mirror (FCM),
-           and class-AB push-pull output stage (M10, M11).}
-  \label{fig:schematic}
-\end{figure}
-
-The transistors and their roles are:
+\textbf{NMOS cascode.}
+\texttt{query\_lut.py} was run at $L = 0.35\,\mu\text{m}$,
+$V_{DS} = 0.15\,\text{V}$, sweeping $V_{GS}$ to find the lowest-$V_{dsat}$
+operating point still in saturation.  The best result was:
 
 \begin{itemize}
-  \item \textbf{M1, M2} (NMOS differential pair): The input transistors.
-        Their $g_m$ determines the GBW of the amplifier.
-  \item \textbf{M3} (NMOS tail current source): Sets the total quiescent
-        current through M1 and M2.
-  \item \textbf{M4, M5} (PMOS folding current sources): Supply a fixed
-        current into each folding node.  The difference between this current
-        and M1/M2's drain current becomes the signal current in the output
-        branch.
-  \item \textbf{M6, M7} (NMOS cascode transistors): Stacked below the output
-        node to increase the NMOS output resistance.
-  \item \textbf{M8, M9} (PMOS cascode transistors): Stacked above the output
-        node to increase the PMOS output resistance.
-  \item \textbf{M10, M11} (NMOS/PMOS class-AB output pair): A push-pull output
-        stage driven by the folded-cascode output.  M10 sources current when
-        the output swings low; M11 sinks current when the output swings high.
+  \item $V_{GS} = 800\,\text{mV}$
+  \item $g_m/I_D = 6.742\,\text{V}^{-1}$
+  \item $I_D/W = 4.657\,\mu\text{A}/\mu\text{m}$
 \end{itemize}
 
-\subsection{Gain and Output Resistance}
-
-The open-loop voltage gain of the folded-cascode first stage is
-
+Applying \eqref{eq:width}:
 \begin{equation}
-  A_v = g_{m1} \cdot R_{out},
-  \label{eq:Av}
+  W = \frac{10\,\mu\text{A}}{4.657\,\mu\text{A}/\mu\text{m}} \approx 2.14\,\mu\text{m}.
 \end{equation}
 
-where $R_{out}$ is the total resistance at the output node.  Looking down
-into the NMOS cascode stack the resistance is approximately
-
-\begin{equation}
-  R_{out,n} \approx \frac{g_{m6}}{g_{ds6}} \cdot \frac{1}{g_{ds1}},
-\end{equation}
-
-and looking up into the PMOS cascode stack
-
-\begin{equation}
-  R_{out,p} \approx \frac{g_{m8}}{g_{ds8}} \cdot \frac{1}{g_{ds4}}.
-\end{equation}
-
-The total output resistance is $R_{out} = R_{out,n} \| R_{out,p}$, and the
-gain follows from \eqref{eq:Av}.  Note that $g_m/g_{ds}$ is the
-\textit{intrinsic gain} of a single transistor and is available directly
-from the LUT under the field \texttt{gm\_gds}.  A target of
-$A_v > 60\,\text{dB}$ (i.e., $> 1000\,\text{V/V}$) requires that both
-cascode stacks contribute sufficient intrinsic gain.
-
-\subsection{Gain-Bandwidth Product}
-
-Assuming the load capacitance $C_L$ creates the dominant pole at the output
-node, the unity-gain bandwidth is
-
-\begin{equation}
-  \text{GBW} = \frac{g_{m1}}{2\pi C_L}.
-  \label{eq:GBW}
-\end{equation}
-
-This is the most important equation for starting the design because it
-directly gives the required $g_m$ of the input pair:
-
-\begin{equation}
-  g_{m1,\text{req}} = 2\pi \cdot \text{GBW} \cdot C_L.
-  \label{eq:gm1req}
-\end{equation}
-
-\subsection{Slew Rate}
-
-The slew rate is limited by how quickly the circuit can charge or discharge
-$C_L$.  At quiescent, the output branch carries current $I_{out}$.
-Under a large input step, all of the tail current is steered to one side,
-giving
-
-\begin{equation}
-  \text{SR} = \frac{I_{tail}}{C_L}.
-  \label{eq:SR}
-\end{equation}
-
-For the class-AB output stage, the peak output current can be much larger
-than the quiescent current, which is the advantage of the class-AB topology
-over a simple class-A buffer.
-
-\subsection{Current Budget}
-
-Before querying the LUT for any transistor, it helps to establish the current
-budget --- how much current flows through each branch at quiescent.  Using
-the convention that $I_{D1}$ is the drain current of each input transistor:
+\textbf{PMOS cascode.}
+An identical sweep (tt corner, $L = 0.35\,\mu\text{m}$,
+$V_{SD} = 0.15\,\text{V}$, varying $V_{SG}$) returned:
 
 \begin{itemize}
-  \item Tail current source M3: $I_{tail} = 2 I_{D1}$
-  \item Each side of the differential pair (M1 or M2): $I_{D1}$
-  \item Each PMOS folder (M4 or M5): $I_{D4} = I_{D1} + I_{cas}$, where
-        $I_{cas}$ is the quiescent current in the output cascode stack.
-        A common choice is $I_{cas} = I_{D1}$, giving $I_{D4} = 2I_{D1}$.
-  \item Each output cascode transistor (M6--M9): $I_{cas} = I_{D1}$
-  \item Output stage (M10, M11): quiescent current $I_q$ set separately by
-        the class-AB bias circuit.
+  \item $V_{SG} = 0.70\,\text{V}$
+  \item $g_m/I_D = 7.36\,\text{V}^{-1}$
+  \item $I_D/W = 0.885\,\mu\text{A}/\mu\text{m}$
 \end{itemize}
 
-\subsection{Step-by-Step Sizing Procedure}
+\begin{equation}
+  W = \frac{10\,\mu\text{A}}{0.885\,\mu\text{A}/\mu\text{m}} \approx 11.30\,\mu\text{m}.
+\end{equation}
 
-The procedure below assumes the following example specifications.  Substitute
-your own values in the bracketed fields.
+The lower current density of the PMOS device relative to the NMOS reflects
+its lower carrier mobility; the wider device compensates to deliver the same
+drain current at the same $V_{dsat}$ budget.
+
+\subsection{Floating Current Mirror (FCM) Devices (Monticelli Cell)}
+
+\textbf{Step 1: Extract initial transconductances.}
+From the operating point, obtain $g_{mn}$ and $g_{mp}$ for the NMOS and PMOS devices.
+
+\textbf{Step 2: Define target transconductance.}
+\begin{equation}
+  g_{m,\text{target}} = \sqrt{g_{mn}\,g_{mp}}.
+\end{equation}
+
+\textbf{Step 3: Adjust device widths.}
+Scale widths to match the target transconductance:
+\begin{align}
+  W_{n,\text{new}} &= W_{n,0}\!\left(\frac{g_{m,\text{target}}}{g_{mn}}\right)^{\!2}, \\
+  W_{p,\text{new}} &= W_{p,0}\!\left(\frac{g_{m,\text{target}}}{g_{mp}}\right)^{\!2}.
+\end{align}
+
+Use $g_m/I_D \approx 8$--$12\,\text{V}^{-1}$ to maintain matching without
+excessive area, and confirm that NMOS and PMOS branches deliver balanced
+currents under nominal bias.
+
+\subsection{Class-AB Output Stage}
+
+\textbf{Determining $I_{max}$.}
+The peak output current is set by the load specification.  With a
+$1.2\,\text{V}$ peak swing into $R_L = 100\,\Omega$ and quiescent
+contributions from the bias network:
+\begin{equation}
+  I_{max} = \frac{V_{pk}}{R_L} + 600\,\mu\text{A} + I_a
+           \approx 12\,\text{mA} + 2.6\,\text{mA} \approx 14.6\,\text{mA}.
+  \label{eq:imax}
+\end{equation}
+
+\textbf{Minimum $V_{DS}$.}
+The minimum drain-to-source voltage available to each output transistor
+follows from the supply headroom:
+\begin{equation}
+  V_{DS,min} = 1.65\,\text{V} - 1.0\,\text{V}\,(1 + 0.25) = 400\,\text{mV}.
+  \label{eq:vdsmin}
+\end{equation}
+
+Minimum channel length ($L = 0.35\,\mu\text{m}$) was used to minimise device
+area given the large required width.
+
+\textbf{NMOS output device --- inversion-level selection.}
+The large $I_{max}$ means that the choice of $g_m/I_D$ directly controls
+total device width.  Three targets were evaluated at
+$L = 0.35\,\mu\text{m}$, $V_{DS} = 400\,\text{mV}$:
 
 \begin{table}[htbp]
-\caption{Example Design Specifications}
+\caption{NMOS Output Device: $g_m/I_D$ Trade-off ($L = 0.35\,\mu$m, $V_{DS} = 400\,\text{mV}$)}
 \begin{center}
-\begin{tabular}{lll}
+\begin{tabular}{cccc}
 \toprule
-\textbf{Parameter} & \textbf{Symbol} & \textbf{Value} \\
+$g_m/I_D$ (V$^{-1}$) & $I_D/W$ ($\mu$A/$\mu$m) & $g_m/g_{ds}$ & Total $W$ ($\mu$m) \\
 \midrule
-Supply voltage      & $V_{DD}$  & $3.3\,\text{V}$ \\
-Load capacitance    & $C_L$     & $10\,\text{pF}$ \\
-GBW target          & GBW       & $10\,\text{MHz}$ \\
-DC gain target      & $A_v$     & $>60\,\text{dB}$ \\
-Slew rate taret    & SR        & $>5\,\text{V/}\mu\text{s}$ \\
-Output swing        & ---       & $\pm 1\,\text{V}$ from mid-rail \\
+10 & 1.121 & 22.6 & 13\,469 \\
+ 7 & ---   & 13.0 &    785  \\
+ 5 & ---   &  7.4 &    529  \\
 \bottomrule
 \end{tabular}
-\label{tab:specs}
+\label{tab:nmos_tradeoff}
 \end{center}
 \end{table}
 
-% ---- Step 1 ----
-\subsubsection{Step 1: Compute Required Input-Pair Transconductance}
+$g_m/I_D = 10$ was rejected because the resulting total width of
+$13{,}469\,\mu\text{m}$ is impractically large.  Reducing to $g_m/I_D = 7$
+brought the total width to $785\,\mu\text{m}$ but limited intrinsic gain to
+$g_m/g_{ds} = 13\,\text{V/V}$.  $g_m/I_D = 5$ was selected:
+$W_{total} = 529\,\mu\text{m}$, $V_{dsat} \approx 200\,\text{mV}$
+(satisfying \eqref{eq:vdsmin}), and $g_m/g_{ds} = 7.4\,\text{V/V}$.
 
-Apply \eqref{eq:gm1req} to find the transconductance the input pair must
-provide:
-
+\textbf{PMOS output device.}
+The same $g_m/I_D = 5$ target was applied to the PMOS.  The LUT returned
+$I_D/W = 7.47\,\mu\text{A}/\mu\text{m}$, giving
 \begin{equation}
-  g_{m1,\text{req}} = 2\pi \times 10\,\text{MHz} \times 10\,\text{pF}
-                     \approx 628\,\mu\text{A/V}.
+  W_{total} = \frac{14.6\,\text{mA}}{7.47\,\mu\text{A}/\mu\text{m}} \approx 1{,}918\,\mu\text{m}.
 \end{equation}
-
-This number is fixed by the specification and does not change regardless of
-which transistor is chosen.  Everything else follows from it.
-
-% ---- Step 2 ----
-\subsubsection{Step 2: Choose gm/Id and L for the Input Pair (M1, M2)}
-
-Look at the \textbf{$I_D/W$ vs.\ gm/Id} plot (Fig.~\ref{fig:id_wl})
-and the \textbf{$f_T$ vs.\ gm/Id} plot (Fig.~\ref{fig:ft}) to pick an
-operating point for M1/M2.
-
-\begin{itemize}
-  \item Choose $g_m/I_D = 15\,\text{V}^{-1}$ (moderate inversion --- good
-        balance of efficiency and bandwidth).
-  \item Choose $L = 1.0\,\mu\text{m}$ (longer channel for better intrinsic
-        gain; check that the \texttt{gm\_gds} value is large enough after
-        the query).
-  \item Assume $V_{DS1} \approx 0.9\,\text{V}$ for the query.  This is a
-        reasonable mid-supply estimate; you will verify it fits once the
-        full bias point is known.
-\end{itemize}
-
-Run the design-mode query, passing the required $g_m$:
-
-\begin{lstlisting}
-python query_lut.py \
-  --l 1.0 --gmid 15 --vds 0.9 \
-  --gm 628e-6
-\end{lstlisting}
-
-\textbf{What to record from the output:}
-\begin{itemize}
-  \item $V_{GS1}$ --- you will need this to set the bias network.
-  \item $I_{D1}$ --- the quiescent drain current of each input transistor.
-  \item $W_{1,2}$ --- the transistor width the tool computed from
-        \eqref{eq:width}.
-  \item $V_{dsat1}$ --- needed for the output swing headroom check in
-        Step~8.
-\end{itemize}
-
-% ---- Step 3 ----
-\subsubsection{Step 3: Size the Tail Current Source (M3)}
-
-The tail source must supply $I_{tail} = 2 I_{D1}$.
-
-\begin{itemize}
-  \item Use NMOS.  Choose a long channel ($L = 2.0\,\mu\text{m}$) to
-        maximize $r_o$, which increases the common-mode rejection ratio.
-  \item The tail source is not in the signal path, so its $g_m/I_D$ is
-        chosen to keep $V_{dsat}$ small (preserving headroom at the bottom
-        of the supply) while ensuring saturation.  A value of
-        $g_m/I_D \approx 10\,\text{V}^{-1}$ is a reasonable starting point.
-  \item Assume $V_{DS,tail} \approx 0.3\,\text{V}$ --- just enough to keep
-        it in saturation.
-\end{itemize}
-
-\begin{lstlisting}
-python query_lut.py \
-  --l 2.0 --gmid 10 --vds 0.3 \
-  --id <2 * ID1 from Step 2>
-\end{lstlisting}
-
-Record $V_{GS3}$, $W_3$, and $V_{dsat3}$.
-
-% ---- Step 4 ----
-\subsubsection{Step 4: Size the PMOS Folding Current Sources (M4, M5)}
-
-Each PMOS folder supplies $I_{D4} = 2 I_{D1}$ (one $I_{D1}$ for the
-differential pair branch and one $I_{D1}$ for the output cascode branch).
-
-\begin{itemize}
-  \item Use the PMOS LUT (\texttt{--path char\_data/pmos\_lut.npz}).
-  \item Choose $L = 1.0\,\mu\text{m}$.
-  \item Choose $g_m/I_D \approx 12\,\text{V}^{-1}$ (moderate inversion).
-        The PMOS folders are current sources, not signal transistors, but
-        their $r_o$ appears in $R_{out,p}$ so a longer channel or moderate
-        inversion is preferred.
-  \item Assume $V_{SD4} \approx 0.9\,\text{V}$ (note: for PMOS the tool
-        uses $V_{SG}$ and $V_{SD}$ internally, but the command-line
-        arguments \texttt{--vgs} and \texttt{--vds} refer to the intrinsic
-        quantities, so enter positive magnitudes the same way as for NMOS).
-\end{itemize}
-
-\begin{lstlisting}
-python query_lut.py \
-  --path char_data/pmos_lut.npz \
-  --l 1.0 --gmid 12 --vds 0.9 \
-  --id <2 * ID1>
-\end{lstlisting}
-
-Record $V_{SG4}$, $W_{4,5}$, and $V_{dsat4}$.
-
-% ---- Step 5 ----
-\subsubsection{Step 5: Size the NMOS Cascode Transistors (M6, M7)}
-
-M6/M7 carry the output cascode current $I_{cas} = I_{D1}$ and are in the
-signal path.  Their intrinsic gain $g_{m6}/g_{ds6}$ (field \texttt{gm\_gds}
-in the LUT output) multiplies $r_{o1}$ to form $R_{out,n}$.
-
-\begin{itemize}
-  \item Use NMOS.  Choose $L = 1.0\,\mu\text{m}$ or longer if
-        \texttt{gm\_gds} is too low.
-  \item Choose $g_m/I_D \approx 15\,\text{V}^{-1}$.
-  \item For $V_{DS6}$: the cascode transistor is biased so that M1 is
-        just at the edge of saturation, meaning $V_{DS6} \approx V_{dsat6}$.
-        This maximizes output swing.  Use $V_{DS6} = 0.2\,\text{V}$ as an
-        initial approximation and refine after checking $V_{dsat6}$ from the
-        query output.
-\end{itemize}
-
-\begin{lstlisting}
-python query_lut.py \
-  --l 1.0 --gmid 15 --vds 0.2 \
-  --id <ID1>
-\end{lstlisting}
-
-\textbf{Check:} Inspect the \texttt{gm\_gds} value.  If
-$R_{out,n} = (\texttt{gm\_gds})_6 \times r_{o1}$ combined with $R_{out,p}$
-does not give enough gain (Step~8), increase $L$ and re-query.
-
-Record $V_{GS6}$, $W_{6,7}$, $V_{dsat6}$, and \texttt{gm\_gds}.
-
-% ---- Step 6 ----
-\subsubsection{Step 6: Size the PMOS Cascode Transistors (M8, M9)}
-
-M8/M9 are the mirror image of M6/M7 on the PMOS side and carry the same
-current $I_{cas} = I_{D1}$.
-
-\begin{itemize}
-  \item Use the PMOS LUT.
-  \item Match the $g_m/I_D$ and $L$ choices made for M6/M7.
-  \item Use $V_{SD8} = 0.2\,\text{V}$ (same reasoning as Step~5).
-\end{itemize}
-
-\begin{lstlisting}
-python query_lut.py \
-  --path char_data/pmos_lut.npz \
-  --l 1.0 --gmid 15 --vds 0.2 \
-  --id <ID1>
-\end{lstlisting}
-
-Record $V_{SG8}$, $W_{8,9}$, $V_{dsat8}$, and \texttt{gm\_gds}.
-
-% ---- Step 7 ----
-\subsubsection{Step 7: Estimate DC Gain}
-
-With all cascode transistors sized, estimate $A_v$ to verify the
-$60\,\text{dB}$ target before proceeding.
-
-The output conductance of M1 is $g_{ds1} = g_{m1} / \texttt{gm\_gds}_1$
-(read \texttt{gm\_gds} from the Step~2 query).  Then:
-
-\begin{align}
-  R_{out,n} &= (\texttt{gm\_gds})_6 \times (1/g_{ds1}), \\
-  R_{out,p} &= (\texttt{gm\_gds})_8 \times (1/g_{ds4}), \\
-  R_{out}   &= R_{out,n} \| R_{out,p}, \\
-  A_v       &= g_{m1} \times R_{out}.
-\end{align}
-
-If $A_v < 1000\,\text{V/V}$, increase the channel length of the cascode
-transistors (M6--M9) to raise \texttt{gm\_gds} and re-query.  Longer
-channels increase intrinsic gain but reduce $f_T$; the design space for
-$L$ is shown in the LUT plots.
-
-% ---- Step 8 ----
-\subsubsection{Step 8: Check Output Swing Headroom}
-
-Each cascode stack removes a minimum of two $V_{dsat}$ values from the
-available output swing.  The minimum output voltage is
-
-\begin{equation}
-  V_{out,\min} = V_{dsat6} + V_{dsat1},
-  \label{eq:vout_min}
-\end{equation}
-
-and the maximum output voltage is
-
-\begin{equation}
-  V_{out,\max} = V_{DD} - V_{dsat8} - V_{dsat4}.
-  \label{eq:vout_max}
-\end{equation}
-
-Verify that $V_{out,\max} - V_{out,\min}$ meets the $\pm 1\,\text{V}$
-swing target around mid-rail ($1.65\,\text{V}$ for a $3.3\,\text{V}$
-supply).  If not, reduce the $g_m/I_D$ of the cascode and folding devices
-toward strong inversion to shrink their $V_{dsat}$ values and re-run
-Steps~4--6.
-
-% ---- Step 9 ----
-\subsubsection{Step 9: Size the Class-AB Output Stage (M10, M11)}
-
-The class-AB output stage is a push-pull pair (M10 NMOS, M11 PMOS) driven
-directly by the folded-cascode output.  The class-AB bias circuit sets a
-quiescent current $I_q$ through both devices while allowing them to source
-or sink much larger currents under a large signal.
-
-\paragraph{Determine $I_q$:}
-The quiescent transconductance of the output stage determines the
-high-frequency output impedance seen by $C_L$.  A common starting point
-is to set $g_{m,out} \approx 3$--$5 \times g_{m1}$ so that the output
-stage pole ($f \approx g_{m,out} / (2\pi C_L)$) is well above the
-unity-gain frequency.  Choose $I_q$ to achieve this.
-
-\paragraph{Size M10 (NMOS):}
-\begin{itemize}
-  \item Use NMOS LUT.  Choose $g_m/I_D \approx 10\,\text{V}^{-1}$ (strong
-        inversion for low $V_{dsat}$ to maximize output swing).
-  \item Choose $L = 0.7\,\mu\text{m}$ (shorter for lower $V_{dsat}$, but
-        not minimum length to avoid poor $r_o$).
-  \item Assume $V_{DS10} \approx V_{DD}/2$ at quiescent.
-\end{itemize}
-
-\begin{lstlisting}
-python query_lut.py \
-  --l 0.7 --gmid 10 --vds 1.65 \
-  --id <Iq>
-\end{lstlisting}
-
-\paragraph{Size M11 (PMOS):}
-Run the same query against the PMOS LUT with the same $g_m/I_D$ target and
-$I_q$:
-
-\begin{lstlisting}
-python query_lut.py \
-  --path char_data/pmos_lut.npz \
-  --l 0.7 --gmid 10 --vds 1.65 \
-  --id <Iq>
-\end{lstlisting}
-
-Record $V_{GS10}$, $V_{SG11}$, $W_{10}$, $W_{11}$, and both $V_{dsat}$ values.
-
-% ---- Step 10 ----
-\subsubsection{Step 10: Determine Bias Voltages}
-
-Each transistor's $V_{GS}$ (or $V_{SG}$ for PMOS) returned by the LUT
-tells you the gate voltage required for that device to carry its target
-current.  Use these to set the fixed bias voltages in the schematic:
-
-\begin{itemize}
-  \item \textbf{M3 gate} ($V_{b3}$): set so $V_{b3} = V_{GS3}$.
-  \item \textbf{M6/M7 NMOS cascode gate} ($V_{b6}$): the cascode gate must be
-        high enough that M6/M7 are saturated while M1/M2 are also
-        saturated.  A starting value is
-        $V_{b6} = V_{dsat1} + V_{GS6}$ (bias M6 so that when M1's drain
-        sits at $V_{dsat1}$, M6's $V_{GS} = V_{GS6}$).
-  \item \textbf{M8/M9 PMOS cascode gate} ($V_{b8}$): by symmetry,
-        $V_{b8} = V_{DD} - V_{dsat4} - V_{SG8}$.
-  \item \textbf{M4/M5 PMOS folder gate} ($V_{b4}$): set so
-        $V_{DD} - V_{b4} = V_{SG4}$.
-\end{itemize}
-
-In practice these voltages are generated by a bias network (e.g., a diode-
-connected transistor or a simple resistor divider).  At this stage,
-enter the calculated numerical values directly as voltage sources in LTspice
-to verify the operating point before adding a proper bias network.
-
-% ---- Step 11 ----
-\subsubsection{Step 11: Verify in LTspice}
-
-Place all transistors in the schematic using the widths and lengths from
-Steps~2--9.  Apply the bias voltages from Step~10.  Run a \texttt{.op}
-simulation and check:
-
-\begin{enumerate}
-  \item Each transistor is in saturation: $V_{DS} > V_{dsat}$ (NMOS) or
-        $V_{SD} > V_{dsat}$ (PMOS).
-  \item The drain currents match the current budget from
-        Section~\ref{sec:folded_cascode}C.
-  \item The output node DC voltage sits near mid-supply when both inputs
-        are at the same voltage (common mode).
-\end{enumerate}
-
-If a transistor is in the linear region, adjust its bias voltage or widen
-the device to reduce $V_{dsat}$ and re-run.  Once the \texttt{.op} point
-looks correct, run an \texttt{.ac} analysis and verify GBW against
-\eqref{eq:GBW}.
+Individual device finger widths were set so that $W_{p,out} = W_{n,out}$,
+ensuring a symmetric layout for the output pair.
 
 \subsection{Summary Sizing Table}
-
-Use Table~\ref{tab:design} to record results as you work through the steps.
 
 \begin{table*}[htbp]
 \caption{Transistor Sizing Summary}
@@ -744,13 +440,13 @@ Use Table~\ref{tab:design} to record results as you work through the steps.
 \toprule
 \textbf{Device} & \textbf{Type} & \textbf{$g_m/I_D$ (V$^{-1}$)} & \textbf{$L$ ($\mu$m)} & \textbf{$W$ ($\mu$m)} & \textbf{$I_D$ ($\mu$A)} & \textbf{$V_{dsat}$ (V)} \\
 \midrule
-M1, M2  & NMOS &  &  &  &  &  \\
-M3      & NMOS &  &  &  &  &  \\
-M4, M5  & PMOS &  &  &  &  &  \\
-M6, M7  & NMOS &  &  &  &  &  \\
-M8, M9  & PMOS &  &  &  &  &  \\
-M10     & NMOS &  &  &  &  &  \\
-M11     & PMOS &  &  &  &  &  \\
+M1, M2  & NMOS &      &      &           &        &      \\
+M3      & NMOS &      &      &           &        &      \\
+M4, M5  & PMOS &      &      &           &        &      \\
+M6, M7  & NMOS & 6.74 & 0.35 &  2.14     & 10     & 0.12 \\
+M8, M9  & PMOS & 7.36 & 0.35 & 11.30     & 10     & 0.12 \\
+M10     & NMOS & 5    & 0.35 &    529    & 14\,600 (pk) & 0.20 \\
+M11     & PMOS & 5    & 0.35 & 1\,918    & 14\,600 (pk) & ---  \\
 \bottomrule
 \end{tabular}
 \label{tab:design}
@@ -832,8 +528,9 @@ A Python-based gm/Id characterization and query tool has been presented.
 The tool automates the characterization sweep, stores results in a
 four-dimensional LUT, and provides a design-mode query that converts a
 $g_m/I_D$ target and required current into a transistor width in a single
-step.  The methodology was demonstrated through an eleven-step sizing
-procedure for a folded-cascode class-AB operational amplifier.  Because all
+step.  The methodology was demonstrated by sizing the cascode and output-stage
+transistors of a folded-cascode class-AB operational amplifier, including
+an explicit inversion-level trade-off for the output devices.  Because all
 sizing data come directly from the SPICE model, the results are more accurate
 than square-law estimates, and no hand-calculation iteration is required
 before running the verification simulation.

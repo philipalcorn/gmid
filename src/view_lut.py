@@ -349,7 +349,41 @@ def plot_gmro_vs_vds(lut, args, is_pmos, l_indices):
     ax.legend(fontsize=8)
     fig.tight_layout()
 
+def plot_vdsat_vs_gmid(lut, args, is_pmos, l_indices):
+    """Window 5: Vdsat vs gm/Id."""
+    slices = _get_slices(lut, args, is_pmos)
+    L = lut["L"]
+    colors = color_cycle(len(l_indices))
+    linestyles = ["-", "--", ":", "-."]
 
+    fig, ax = plt.subplots(figsize=(8, 5.5))
+
+    for si, (s, slice_label) in enumerate(slices):
+        ls = linestyles[si % len(linestyles)]
+        for ci, iL in enumerate(l_indices):
+            Lv    = L[iL]
+            gm_id = s["gm_id"][iL]
+            vdsat = s["vdsat"][iL]
+
+            mask = np.isfinite(gm_id) & np.isfinite(vdsat)
+
+            extra = slice_label if len(slices) > 1 else ""
+            ax.plot(gm_id[mask], vdsat[mask],
+                    color=colors[ci], ls=ls,
+                    label=make_label(Lv, extra))
+
+    ax.set_xlabel("gm/Id  [1/V]")
+    ax.set_ylabel("Vdsat  [V]")
+    ax.set_title(f"{'PMOS' if is_pmos else 'NMOS'} — Vdsat vs gm/Id")
+    ax.grid(True, alpha=0.4)
+    ax.legend(fontsize=8)
+
+    if args.xlim:
+        ax.set_xlim(args.xlim)
+    else:
+        ax.set_xlim(0, 25)
+
+    fig.tight_layout()
 # ─────────────────────────── main ───────────────────────────────────────────
 
 def main():
@@ -394,7 +428,7 @@ def main():
     plot_intrinsic_gain (lut, args, is_pmos, l_indices)
     plot_ft             (lut, args, is_pmos, l_indices)
     plot_gmro_vs_vds    (lut, args, is_pmos, l_indices)
-
+    plot_vdsat_vs_gmid(lut, args, is_pmos, l_indices)
     plt.show()
 
 
