@@ -14,7 +14,7 @@ Python sets: Vg, Vd, Vb, VDD, L
     Vd  : intrinsic Vds (NMOS) = intrinsic Vsd (PMOS)
     Vb  : set to -Vsb for NMOS body effect
           PMOS automatically gets Vb_p = VDD - Vb = VDD + Vsb (symmetric)
-    VDD : supply rail, fixed at 1.8 V
+    VDD : supply rail
 
 Outputs:
     ./char_data/nmos_lut.npz

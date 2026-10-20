@@ -6,7 +6,6 @@ from pathlib import Path
 class RunConfig:
     def __init__(self):
         # Path to LTSPICE executable
-
         self.exe_path = Path(r"C:\Program Files\ADI\LTspice\LTspice.exe")
         self.asc_path = Path(__file__).parent.parent / "simulations"  
         if not self.asc_path.exists():

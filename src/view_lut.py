@@ -19,8 +19,8 @@ All arguments:
     --path        Path to .npz LUT file
     --vds         Vds/Vsd slice for design curves [V]  (default 0.9)
     --vsb         Vsb slice for design curves [V]       (default 0.0)
-    --vov         Vov for slide 19 gm*ro plot [V]       (default 0.2)
-    --vgs         Override Vgs/Vsg for slide 19 directly (overrides --vov)
+    --vov         Vov for gm*ro plot [V]       (default 0.2)
+    --vgs         Override Vgs/Vsg for 19 directly (overrides --vov)
     --l           Filter to specific L values in um, e.g. --l 0.35 1.0 2.0
     --xlim        gm/Id x-axis limits, e.g. --xlim 0 20
     --ylim        Id/W y-axis limits [µA/µm], e.g. --ylim 0 60
@@ -284,7 +284,7 @@ def plot_ft(lut, args, is_pmos, l_indices):
     fig.tight_layout()
 
 
-# ─────────────────────────── slide 19 ───────────────────────────────────────
+# ─────────────────────────── gm*ro ───────────────────────────────────────
 
 def plot_gmro_vs_vds(lut, args, is_pmos, l_indices):
     """Window 4: gm*ro vs Vds/Vsd — Tiwari slide 19."""
