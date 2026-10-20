@@ -1,192 +1,131 @@
-# LTspice Python Simulation Pipeline
+# gm/Id Sizing Toolkit
 
-A lightweight Python framework for automating LTspice simulations, collecting raw simulation data, and parsing device operating point information for analysis and visualization.
+Size CMOS analog transistors from simulated device data instead of square-law hand calculations.
 
-This project builds on PyLTSpice and provides a structured workflow for:
+This tool characterizes a process's NMOS and PMOS devices in LTspice across a four-dimensional bias space (L, V<sub>GS</sub>, V<sub>DS</sub>, V<sub>SB</sub>), stores the results as lookup tables, and turns a design target such as *"g<sub>m</sub>/I<sub>D</sub> = 12 at L = 1 µm, I<sub>D</sub> = 50 µA"* into a bias voltage and transistor width in one command.
 
-- Running parametric sweeps
-- Parsing .raw and .log files
-- Extracting traces, .meas results, and semiconductor operating points
-- Organizing results into structured Python objects
-- Plotting and analyzing simulation data
+📄 **Paper:** [A gm/Id Methodology Design Tool for Analog CMOS Circuit Synthesis: Application to the Folded-Cascode Class-AB Amplifier](report/main.pdf) (IEEE conference format, 4 pages)
 
-The goal is to make large simulation sweeps reproducible, scriptable, and easier to analyze from Python.
+<p align="center">
+  <img src="report/img/nmos_intrinsic_gain.png" width="48%" alt="Intrinsic gain vs gm/Id for four NMOS channel lengths">
+  <img src="report/img/nmos_current_density.png" width="48%" alt="Current density vs gm/Id for four NMOS channel lengths">
+</p>
+<p align="center"><em>Design curves generated from the NMOS lookup table: intrinsic gain g<sub>m</sub>/g<sub>ds</sub> (left) and current density I<sub>D</sub>/W (right) vs. g<sub>m</sub>/I<sub>D</sub>, one curve per channel length.</em></p>
 
-## Features
-Run LTspice simulations from Python
+---
 
-Perform parameter sweeps programmatically
+## Why gm/Id?
 
-Extract:
-- waveform traces
-- .meas results
-- device operating point parameters
+Square-law equations stop being accurate in short-channel devices and in moderate inversion. Hand sizing turns into a loop of calculating a width, simulating it, adjusting, and simulating again. The gm/Id method replaces that loop with simulated data. You choose an inversion level (g<sub>m</sub>/I<sub>D</sub>) based on what the circuit needs, such as gain, speed, or headroom, and then read the current density, intrinsic gain, f<sub>T</sub>, and V<sub>dsat</sub> straight from the device's characterized behavior. Width is just I<sub>D</sub> divided by the current density.
 
-Filter device parameters and traces
+This repo automates the whole flow, from the SPICE sweep to the sized device.
 
-Collect results into structured dataclasses
-
-Generate quick plots from simulation data
-
-Parallel simulation support via PyLTSpice
-
-## Descriptions
-
-| File             | Purpose                                           |
-| ---------------- | ------------------------------------------------- |
-| `spice.py`       | Wrapper around PyLTspice for running simulations  |
-| `callbacks.py`   | Callback used to collect `.raw` and `.log` data   |
-| `parser.py`      | Converts simulation output into structured data   |
-| `helpers.py`     | Utility functions for printing stats and plotting |
-| `runconfig.py`   | Central configuration for simulations             |
-| `script.py`      | Example pipeline execution                        |
-| `model_file.txt` | Example MOSFET model                              |
-
-The simulation workflow follows four main stages.
-
-### 1. Run Simulation
-
-A Spice object wraps the PyLTspice simulation runner and does the following:
-- creates the .net file
-- launches LTspice
-- handles parameter updates
-- executes simulations
+## Workflow
 
 ```
-spice = Spice(
-    exe_path,
-    asc_path,
-    output_folder,
-    callback_proc=CallbackGetAllData
-)
+ nmos_char.asc ──► characterization.py ──► nmos_lut.npz / pmos_lut.npz
+  (testbench)       (LTspice .op sweep)           │
+                                                  ├──► view_lut.py   design curves
+                                                  └──► query_lut.py  bias point / sizing
 ```
 
-### 2. Callback Data Collection
+### 1. Characterize the process
 
-Each simulation run returns a structured result using a callback.
-
-The callback loads:
-- .raw waveform data
-- .log measurements
-- semiconductor operating point data
-
-and returns a SimResult object.
-
-```
-class SimResult:
-    file_id
-    raw_data
-    log_data
-    semi_ops
+```bash
+python src/characterization.py
 ```
 
-### 3. Parsing Simulation Data
+This runs one LTspice `.op` simulation per bias point on a testbench with both an NMOS and a PMOS in it. The PMOS terminals are mirrored to VDD inside the netlist, so each simulation characterizes both devices. Simulations run in parallel through PyLTSpice. The output is two 4D lookup tables indexed by `[L, Vgs, Vds, Vsb]`, holding:
 
-The Parser converts SimResult objects into ParsedSimResult objects containing:
-- traces
-- .meas values
-- device parameters
+| Field | Meaning |
+|---|---|
+| `Id`, `gm`, `gds`, `gmb`, `cgg` | Raw operating-point values at reference width W = 10 µm |
+| `vth`, `vdsat` | Threshold and saturation voltage |
+| `gm_id` | Transconductance efficiency (inversion level) |
+| `id_w` | Current density, used to compute width |
+| `gm_gds` | Intrinsic gain |
+| `ft` | Transit frequency, g<sub>m</sub> / (2π·C<sub>gg</sub>) |
 
-```
-parser.parse(
-    results,
-    trace_names=["v(vy)", "Id(M7)"],
-    device_names=["M6"],
-    device_values=["Model", "Id", "Vgs", "Vdsat"]
-)
-```
+Sweep ranges and resolution are set at the top of `characterization.py`. `FAST = 1` gives a coarse grid for quick iteration, and `FAST = 0` gives the full-resolution sweep.
 
-### 4. Analysis
+### 2. View the design curves
 
-Utility functions help summarize and visualize results.
-```
-Helpers.print_stats(results)
-Helpers.plot_op_points(results, "V(vx)", "Id(M7)")
-```
-## Example Usage
-
-Example parameter sweep:
-```
-values = ["0.3u", "0.5u", "1.0u"]
-
-for v in values:
-    spice.set_parameter("l", v)
-    spice.simulate()
+```bash
+python src/view_lut.py                                   # NMOS, Vds = 0.9 V, Vsb = 0
+python src/view_lut.py --path char_data/pmos_lut.npz
+python src/view_lut.py --l 0.3 1.0 2.0 --vds 0.6         # chosen lengths, different Vds slice
 ```
 
-After simulations complete:
+This plots current density, intrinsic gain, and f<sub>T</sub> against g<sub>m</sub>/I<sub>D</sub>, as well as g<sub>m</sub>r<sub>o</sub> vs. V<sub>DS</sub> and V<sub>dsat</sub> vs. g<sub>m</sub>/I<sub>D</sub>, with one curve per channel length. Run `--help` for the full set of options.
 
-```
-raw_results = list(spice.sim_runner)
+### 3. Size a transistor
 
-parsed_results = list(parser.parse(
-    raw_results,
-    config.trace_names,
-    config.meas_names,
-    config.device_names,
-    config.device_values
-))
+**Design mode:** give a g<sub>m</sub>/I<sub>D</sub> target and get the bias point and width.
+
+```bash
+python src/query_lut.py --l 1.0 --gmid 15 --vds 0.9 --id 50e-6   # size for Id = 50 µA
+python src/query_lut.py --l 1.0 --gmid 15 --vds 0.9 --gm 500e-6  # size for gm = 500 µS
 ```
 
-## Extracting MOSFET Operating Point Data
+This solves for the V<sub>GS</sub> that hits the target g<sub>m</sub>/I<sub>D</sub> (by interpolating the LUT and root-finding), reports the full operating point, and scales W to meet the required I<sub>D</sub> or g<sub>m</sub>.
 
-MOSFET operating point parameters can also be extracted from the LTspice `.log` file.  
-These values are parsed automatically and stored in the `semi_ops` field of each
-`ParsedSimResult`.
+**Bias mode:** give a bias point and see what the device looks like there.
 
-The devices and parameters to extract are configured in `RunConfig`:
-
-```python
-self.device_names = ["M6"]
-self.device_values = ["Model", "Id", "Vgs", "Vdsat"]```
-After parsing, the data can be accessed directly from the results:
-
-```python
-for r in parsed_results:
-    mos = r.semi_ops["MOSFETS"]["M6"]
-    print(mos["Id"], mos["Vgs"], mos["Vdsat"])
+```bash
+python src/query_lut.py --l 1.0 --vgs 1.0 --vds 0.9 --vsb 0.45
 ```
 
+Running `query_lut.py` with no arguments starts an interactive prompt.
 
+## Try it without LTspice
 
-## Configuration
+Characterized lookup tables are included in [`char_data/`](char_data/), so `view_lut.py` and `query_lut.py` work right after installing the Python dependencies. You only need LTspice to re-characterize or to use a different process model. The included tables use the coarse (`FAST = 1`) grid, so regenerate with `FAST = 0` for final sizing.
 
-Simulation settings are controlled through RunConfig.
+## Example: folded-cascode class-AB op-amp
 
-Example parameters:
+The [paper](report/main.pdf) uses the toolkit to size a folded-cascode amplifier with a class-AB output stage driving a 100 Ω load. One example from it: choosing the inversion level for the NMOS output device, which has to supply about 14.6 mA peak.
+
+| g<sub>m</sub>/I<sub>D</sub> (V⁻¹) | I<sub>D</sub>/W (µA/µm) | g<sub>m</sub>/g<sub>ds</sub> | Total W (µm) |
+|---|---|---|---|
+| 10 | 1.12 | 22.6 | 13,469 |
+| 7 | 18.3 | 13.0 | 785 |
+| 5 | 28.3 | 7.4 | 529 |
+
+Moving to stronger inversion shrinks the device by more than 25× at the cost of intrinsic gain. The table makes that trade-off visible in a few queries instead of several simulate-and-adjust iterations.
+
+## Repository layout
 
 ```
-self.trace_names = ["v(vy)", "Id(M7)"]
-self.device_names = ["M6"]
-self.device_values = ["Model", "Id", "Vgs", "Vdsat"]
+src/
+  characterization.py   4D NMOS/PMOS sweep → char_data/*.npz
+  view_lut.py           design-curve plots
+  query_lut.py          bias-mode / design-mode queries and sizing
+  spice.py              PyLTSpice wrapper: netlist editing, parallel sim runs
+  callbacks.py          collects .raw/.log output from each sim
+  parser.py             extracts traces, .meas results, and device OP data into dataclasses
+  helpers.py            stats printing and plotting utilities
+  runconfig.py          LTspice path and parsing options
+simulations/            characterization testbench, process model, example circuits
+char_data/              pre-generated NMOS and PMOS lookup tables
+report/                 paper source (LaTeX), figures, and PDF
 ```
+
+The LTspice layer (`spice.py`, `callbacks.py`, `parser.py`) is general-purpose. You can point it at any schematic to run parameter sweeps and pull out traces, `.meas` values, and transistor operating points.
 
 ## Requirements
 
-Python 3.10+
-LTspice
-PyLTSpice
-NumPy
-Matplotlib
+- Python 3.10+
+- `pip install numpy scipy matplotlib PyLTSpice`
+- [LTspice](https://www.analog.com/en/resources/design-tools-and-calculators/ltspice-simulator.html), only needed for characterization. Set the executable path in `src/runconfig.py`; the default is the standard Windows install location.
 
-Install dependencies:
+## Next steps
 
-```pip install numpy matplotlib PyLTSpice```
+- Process corners and Monte Carlo characterization
+- Export lookup tables to CSV or Pandas
+- Automatically size a full circuit from a list of per-device specs
 
-## Motivation
+## References
 
-LTspice is powerful but difficult to automate for large design-space exploration tasks. This project provides a clean Python interface for:
-- analog design sweeps
-- device characterization
-- operating point extraction
-- automated analysis pipelines
-
-## Future Improvements
-
-Potential extensions include:
-- gm/Id curve extraction
-- automated device characterization
-- Monte Carlo sweep support
-- multi-parameter sweeps
-- better plotting utilities
-- exporting results to Pandas / CSV
+- F. Silveira, D. Flandre, and P. G. A. Jespers, "A gm/Id based methodology for the design of CMOS analog circuits and its application to the synthesis of a silicon-on-insulator micropower OTA," *IEEE JSSC*, vol. 31, no. 9, pp. 1314–1319, 1996. [doi:10.1109/4.535414](https://doi.org/10.1109/4.535414)
+- B. Murmann, "CMOS Transistor Sizing: Gm/Id Approach," Circuit Insights (ISSCC 2026), Episode 5. [YouTube](https://www.youtube.com/watch?v=oNDmJ2a3tWI)
+- [PyLTSpice](https://github.com/nunobrum/PyLTSpice): Python interface for LTspice
